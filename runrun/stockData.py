@@ -20,13 +20,15 @@ import time
 import pandas as pd
 import tushare as ts
 
-data_path = 'Stock\\'
+
+
+data_path = '\\Stock\\'
 
 ONE_HOUR_IN_SEC = 60 * 60
 
 
 def fetch_stock_data(code, data_csv=None):
-    print("log: begin of fetch_stock_data()")
+    # print("log: begin of fetch_stock_data()")
 
     if data_csv is None:
         data_csv = data_path + code + '.csv'
@@ -36,8 +38,8 @@ def fetch_stock_data(code, data_csv=None):
     else:
         file_last_modify_time_in_sec = os.path.getmtime(data_csv)
         curr_time_in_sec = time.time()
-        print "last modified: %s" % time.ctime(file_last_modify_time_in_sec)
-        print "current time %s" % time.ctime(curr_time_in_sec)
+        # print "last modified: %s" % time.ctime(file_last_modify_time_in_sec)
+        # print "current time %s" % time.ctime(curr_time_in_sec)
 
         assert (curr_time_in_sec >= file_last_modify_time_in_sec)
 
@@ -53,6 +55,9 @@ def fetch_stock_data(code, data_csv=None):
 def get_tushare_data_and_store(code, data_csv):
     stock_df = ts.get_h_data(code, autype='qfq')
     stock_df = stock_df.sort_index(axis=0, ascending=True)
+
+    print data_csv
+
     stock_df.to_csv(data_csv)
     print("log: get data via tushare")
 
@@ -63,7 +68,6 @@ def getFeatureSample(StockDf, idx, colum_name, feature_id):
     feature_val = StockDf.ix[idx, colum_name]
     sample = str(feature_id) + ':' + str(feature_val) + ' '
     return sample
-
 
 def fetch_stock_data_obsolete(code, output_csv=None):
     StockDf = ts.get_h_data(code)
