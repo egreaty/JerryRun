@@ -19,164 +19,54 @@ import os
 import time
 import pandas as pd
 import tushare as ts
+import logging
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-
-data_path = '\\Stock\\'
+cwd = os.getcwd()
+default_data_path = cwd + '\\Stock\\'
 
 ONE_HOUR_IN_SEC = 60 * 60
 
 
-def fetch_stock_data(code, data_csv=None):
-    # print("log: begin of fetch_stock_data()")
+'''
+api for top level get data
+it will internally decide if get if from tushare or local
+'''
 
-    if data_csv is None:
-        data_csv = data_path + code + '.csv'
 
-    if not os.path.isfile(data_csv):
-        stock_df = get_tushare_data_and_store(code, data_csv)
+def get_stock_data(code, data_path=None):
+    logger.debug('begin of fetch_stock_data()')
+
+    if data_path is None:
+        data_file = default_data_path + code + '.csv'
     else:
-        file_last_modify_time_in_sec = os.path.getmtime(data_csv)
-        curr_time_in_sec = time.time()
-        # print "last modified: %s" % time.ctime(file_last_modify_time_in_sec)
-        # print "current time %s" % time.ctime(curr_time_in_sec)
+        data_file = data_path + code + '.csv'
 
-        assert (curr_time_in_sec >= file_last_modify_time_in_sec)
+    logger.debug('data_file is %s', data_file)
 
-        if curr_time_in_sec - file_last_modify_time_in_sec > ONE_HOUR_IN_SEC: # TODO: Here change it to check the data_csv, if the last line is today's
-            stock_df = get_tushare_data_and_store(code, data_csv)
-        else:
-            stock_df = pd.read_csv(data_csv, encoding='utf-8')
-            print("log: read data from local file")
+    if os.path.isfile(data_file):
+        if get_file_age(data_file) < (8 * ONE_HOUR_IN_SEC):  # TODO: change to check if the last record is today
+            stock_df = pd.read_csv(data_file, encoding='utf-8')
+            logger.info("read data from local file")
 
-    return [stock_df, data_csv]
+    try:  # alternative: if 'myVar' in locals():
+        stock_df
+    except NameError:  # if stock_df not exist, get it from tushare
+        stock_df = ts.get_h_data(code, autype='qfq')
+        stock_df = stock_df.sort_index(axis=0, ascending=True)
+        stock_df.to_csv(data_file)
 
-
-def get_tushare_data_and_store(code, data_csv):
-    stock_df = ts.get_h_data(code, autype='qfq')
-    stock_df = stock_df.sort_index(axis=0, ascending=True)
-
-    print data_csv
-
-    stock_df.to_csv(data_csv)
-    print("log: get data via tushare")
-
-    return stock_df
+    return [stock_df, data_file]
 
 
-def getFeatureSample(StockDf, idx, colum_name, feature_id):
-    feature_val = StockDf.ix[idx, colum_name]
-    sample = str(feature_id) + ':' + str(feature_val) + ' '
-    return sample
+def get_file_age(file_name):
+    modify_time_in_sec = os.path.getmtime(file_name)
+    curr_time_in_sec = time.time()
 
-def fetch_stock_data_obsolete(code, output_csv=None):
-    StockDf = ts.get_h_data(code)
-    StockDf = StockDf.sort_index(axis=0, ascending=True)
-    # adding EMA feature
-    StockDf['ema'] = StockDf['close']
-    StockDf['rise'] = StockDf['close']
-    DfLen = len(StockDf.index)
-    EMA = 0;
-    RISE = 0;
-    for n in range(0, DfLen):
-        idx = n
-        Close = StockDf.ix[idx, 'close']
-        if (n == 0):
-            EMA = Close
-            RISE = 0
-        else:
-            EMA = StockDf.ix[idx - 11, 'ema']
-            EMA = ((n - 1) * EMA + 2 * Close) / (n + 1)
-            CloseP = StockDf.ix[idx - 1, 'close']
-            RISE = (Close - CloseP) / CloseP
+    logger.debug("last modified: %s" % time.ctime(modify_time_in_sec))
+    logger.debug("current time %s" % time.ctime(curr_time_in_sec))
 
-        StockDf.ix[idx, 'ema'] = EMA
-        StockDf.ix[idx, 'rise'] = RISE
-
-    if (output_csv != None):
-        StockDf.to_csv(output_csv)
-
-    return StockDf
-
-
-def genFeature(StockDf, file_name, win_size=3):
-    # Generating moving window features
-    print file_name
-    problem_file = open(file_name, 'w+')
-    DfLen = len(StockDf.index)
-    for n in range(0, DfLen - win_size):
-        predic_idx = n + win_size
-        predict = 0
-        predict = StockDf.ix[predic_idx, 'rise']
-        predict = predict * 10  # 1= rise 10%
-        Sample = str(predict) + ' '
-
-        feature_id = 1
-        feature_val = 0
-        for j in range(n, n + win_size):
-            Sample += getFeatureSample(StockDf, j, 'open', feature_id)
-            feature_id += 1
-            Sample += getFeatureSample(StockDf, j, 'high', feature_id)
-            feature_id += 1
-            Sample += getFeatureSample(StockDf, j, 'close', feature_id)
-            feature_id += 1
-            Sample += getFeatureSample(StockDf, j, 'low', feature_id)
-            feature_id += 1
-            Sample += getFeatureSample(StockDf, j, 'volume', feature_id)
-            feature_id += 1
-            Sample += getFeatureSample(StockDf, j, 'ema', feature_id)
-            feature_id += 1
-
-        Sample += '\n'
-        problem_file.write(Sample)
-
-    problem_file.close()
-    print('\n sample number: ' + str(n + 1) + '\n feature number: ' + str(feature_id - 1))
-
-    del problem_file
-    # del StockDf
-
-
-def genTest(StockDf, file_name, win_size=3):
-    problem_file = open(file_name, 'w+')
-    predict = 0
-    Sample = str(predict) + ' '
-    DfLen = len(StockDf.index)
-    n = DfLen - win_size
-
-    feature_id = 1
-    feature_val = 0
-    for j in range(n, n + win_size):
-        Sample += getFeatureSample(StockDf, j, 'open', feature_id)
-        feature_id += 1
-        Sample += getFeatureSample(StockDf, j, 'high', feature_id)
-        feature_id += 1
-        Sample += getFeatureSample(StockDf, j, 'close', feature_id)
-        feature_id += 1
-        Sample += getFeatureSample(StockDf, j, 'low', feature_id)
-        feature_id += 1
-        Sample += getFeatureSample(StockDf, j, 'volume', feature_id)
-        feature_id += 1
-        Sample += getFeatureSample(StockDf, j, 'ema', feature_id)
-        feature_id += 1
-
-    Sample += '\n'
-    problem_file.write(Sample)
-
-    problem_file.close()
-
-
-print __name__
-'''
-if __name__ == '__main__':
-    #print sys.path
-    print 'the argv is ', sys.argv, 'len is', len(sys.argv)
-    for i in range(1,len(sys.argv)):
-        print  "Argument",i,sys.argv[i]
-
-
-    StockCode = sys.argv[1]
-    Df = fetch_stock_data(StockCode)
-    print Df[0]
-    #genFeature(Df[0], Df[1])
-'''
+    assert (curr_time_in_sec >= modify_time_in_sec)
+    return curr_time_in_sec - modify_time_in_sec
